@@ -1,0 +1,233 @@
+#include <Config.h>
+#include <CliTask.h>
+
+PidConfig::PidConfig() {
+}
+
+Config::Config() {
+    consoleEnabled = false;
+    setUseTestFlashBank(false);
+    loadLatest();
+}
+
+void Config::copy(Config& configSrc) {
+    aircraftType = configSrc.aircraftType;
+    dt = configSrc.dt;
+    rollPid = configSrc.rollPid;
+    pitchPid = configSrc.pitchPid;
+    yawPid = configSrc.yawPid;
+    magXOffset = configSrc.magXOffset;
+    magYOffset = configSrc.magYOffset;
+    magXRange = configSrc.magXRange;
+    magYRange = configSrc.magYRange;
+    magDeclination = configSrc.magDeclination;
+    tailMin = configSrc.tailMin;
+    tailMax = configSrc.tailMax;
+    tailReverse = configSrc.tailReverse;
+    consoleEnabled = configSrc.consoleEnabled;
+}
+
+Config& Config::getInstance()  {
+    static Config instance; 
+    return instance;
+}
+
+void Config::setConfig(Config& config) {
+    this->copy(config);
+}
+
+void Config::loadDefaults() {
+    aircraftType = AircraftType::HELICOPTER;
+
+    rollPid.p = 0.8;
+    rollPid.i = 0.01;
+    rollPid.d = 0.0;
+
+    pitchPid.p = 0.8;
+    pitchPid.i = 0.01;
+    pitchPid.d = 0.0;
+
+    yawPid.p = 0.8;
+    yawPid.i = 0.05;
+    yawPid.d = 0.0;
+
+    dt = 0.02;
+
+    magXOffset = 31.0;
+    magYOffset = 67.0;
+    magXRange = 48.0;
+    magYRange = 53.0;
+    magDeclination = 8.5;
+
+    tailMin = 0.2f;
+    tailMax = 0.8f;
+    tailReverse = false;
+    consoleEnabled = false;
+
+    altimeterFeedback = 0.1f;
+    compassFeedback = 0.01f;
+    gps2posFeedback = 0.01f;
+    gps2velFeedback = 0.01f;
+    accel2frameFeedback = 0.01f;
+    accel2gyroFeedback = 0.1f;
+}
+
+bool Config::loadConfigFromFlash() {
+    uint32_t marker;
+    uint32_t version;
+#ifndef TARGET_IS_SIMULATOR
+    memcpy(&marker, (uint8_t*)baseFlashAddress, 4);
+    memcpy(&version, (uint8_t*)baseFlashAddress+4, 4);
+#else
+    marker = 0x00000000;
+    version = 0xFFFFFFFF;
+#endif
+    if (marker != MEMORY_WRITTEN_MARKER) return false;
+    if (version != CONFIG_VERSION) return false;
+    memcpy(this, (uint8_t*)(baseFlashAddress + 8), sizeof(Config));  // 8 bytes for MEMORY_WRITTEN_MARKER and CONFIG_VERSION
+    consoleEnabled = false;
+    return true;
+}
+
+void Config::saveConfigToFlash() {
+    FLASH_Unlock();  
+    FLASH_ClearFlag(FLASH_FLAG_EOP | FLASH_FLAG_OPERR |FLASH_FLAG_WRPERR | FLASH_FLAG_PGAERR |FLASH_FLAG_PGPERR | FLASH_FLAG_PGSERR);
+    FLASH_Status flashStatus = FLASH_EraseSector(flashSector, VOLTAGE_RANGE);
+    if (flashStatus != FLASH_COMPLETE) {
+        printf("erase flash status = %i" NEWLINE, flashStatus);
+        return;
+    }
+
+    FLASH_ProgramByte(baseFlashAddress, (uint8_t)(MEMORY_WRITTEN_MARKER & 0xFF));
+    FLASH_ProgramByte(baseFlashAddress+1, (uint8_t)((MEMORY_WRITTEN_MARKER & 0xFF00) >> 8));
+    FLASH_ProgramByte(baseFlashAddress+2, (uint8_t)((MEMORY_WRITTEN_MARKER  & 0xFF0000) >> 16));
+    FLASH_ProgramByte(baseFlashAddress+3, (uint8_t)((MEMORY_WRITTEN_MARKER  & 0xFF000000) >> 24));
+    FLASH_ProgramByte(baseFlashAddress+4, (uint8_t)(CONFIG_VERSION & 0xFF));
+    FLASH_ProgramByte(baseFlashAddress+5, (uint8_t)((CONFIG_VERSION & 0xFF00) >> 8));
+    FLASH_ProgramByte(baseFlashAddress+6, (uint8_t)((CONFIG_VERSION  & 0xFF0000) >> 16));
+    FLASH_ProgramByte(baseFlashAddress+7, (uint8_t)((CONFIG_VERSION  & 0xFF000000) >> 24));
+
+    uint8_t* data = (uint8_t*)this;
+    uint32_t size = sizeof(Config);
+    for (uint8_t index=0; index<size; index++) {
+        uint32_t address = baseFlashAddress + 8 + index;  // 8 bytes for MEMORY_WRITTEN_MARKER and CONFIG_VERSION
+        flashStatus = FLASH_ProgramByte(address, *(data+index));
+        if (flashStatus != FLASH_COMPLETE) {
+            printf("write flash status = %i" NEWLINE, flashStatus);
+            return;
+        }
+    }
+    FLASH_Lock();
+}
+
+void Config::printConfig() {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdouble-promotion"
+    printf("Aircraft type = %s" NEWLINE, getAircraftTypeName(aircraftType));
+
+    printf("roll PID p = %f, %f, %f" NEWLINE, rollPid.p, rollPid.i, rollPid.d);
+    printf("pitch PID p = %f, %f, %f" NEWLINE, pitchPid.p, pitchPid.i, pitchPid.d);
+    printf("yaw PID p =  %f, %f, %f" NEWLINE, yawPid.p, yawPid.i, yawPid.d);
+
+    printf("magXOffset, magYOffset = %f, %f" NEWLINE, magXOffset, magYOffset);
+    printf("magXRange, magYRange = %f, %f" NEWLINE, magXRange, magYRange);
+
+    printf("tailMin, max = %f, %f" NEWLINE, tailMin, tailMax);
+    printf("tail reverse = %f" NEWLINE, tailReverse);
+
+    printf("feedback altim %f, compass %f, gps2pos %f, gps2vel %f" NEWLINE, altimeterFeedback, compassFeedback, gps2posFeedback, gps2velFeedback);
+    printf("feedback accel2refFrame %f, accel2gyro %f" NEWLINE, accel2frameFeedback, accel2gyroFeedback);
+
+    printf("dt = %f" NEWLINE NEWLINE, dt);
+#pragma GCC diagnostic pop
+}
+
+const char* Config::getAircraftTypeName(AircraftType aircraftType) {
+    const char* name;
+    switch(aircraftType) {
+        case AircraftType::QUADCOPTER:
+            name = "Quadcopter";
+            break;
+        case AircraftType::HELICOPTER:
+            name = "Helicopter";
+            break;
+//        case AircraftType::AIRPLANE:
+        default:
+            name = "Airplane";
+            break;
+    }
+    return name;
+}
+
+
+bool Config::processGetSet(char* command, char* axisStr, char* propertyStr, char* valueStr) {
+    bool returnVal = true;
+    // syntax was checked in the CLI
+    // tested in CLI
+    float floatValue = atof(valueStr);
+    float boolValue = (strcmp("true", valueStr)==0? true : false);
+    float* floatProperty = NULL;
+    bool* boolProperty = NULL;
+    if (strcmp("yaw", axisStr) == 0) {
+        if (strcmp("pidp", propertyStr) == 0) floatProperty = &this->yawPid.p;
+        else if (strcmp("pidi", propertyStr) == 0) floatProperty = &this->yawPid.i;
+        else if (strcmp("pidd", propertyStr) == 0) floatProperty = &this->yawPid.d;
+    } else if (strcmp("pitch", axisStr) == 0) {
+        if (strcmp("pidp", propertyStr) == 0) floatProperty = &this->pitchPid.p;
+        else if (strcmp("pidi", propertyStr) == 0) floatProperty = &this->pitchPid.i;
+        else if (strcmp("pidd", propertyStr) == 0) floatProperty = &this->pitchPid.d;
+    } else if (strcmp("roll", axisStr) == 0) {
+        if (strcmp("pidp", propertyStr) == 0) floatProperty = &this->rollPid.p;
+        else if (strcmp("pidi", propertyStr) == 0) floatProperty = &this->rollPid.i;
+        else if (strcmp("pidd", propertyStr) == 0) floatProperty = &this->rollPid.d;
+    } else if (strcmp("tail", axisStr) == 0) {
+        if (strcmp("min", propertyStr) == 0) floatProperty = &this->tailMin;
+        else if (strcmp("max", propertyStr) == 0) floatProperty = &this->tailMax;
+        else if (strcmp("reverse", propertyStr) == 0) boolProperty = &this->tailReverse;
+    } else if (strcmp("feedback", axisStr) == 0) {
+        if (strcmp("altimeter", propertyStr) == 0) floatProperty = &this->altimeterFeedback;
+        else if (strcmp("compass", propertyStr) == 0) floatProperty = &this->compassFeedback;
+        else if (strcmp("gps2pos", propertyStr) == 0) floatProperty = &this->gps2posFeedback;
+        else if (strcmp("gps2vel", propertyStr) == 0) floatProperty = &this->gps2velFeedback;
+        else if (strcmp("accel2frame", propertyStr) == 0) floatProperty = &this->accel2frameFeedback;
+        else if (strcmp("accel2gyro", propertyStr) == 0) floatProperty = &this->accel2gyroFeedback;
+    }
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdouble-promotion"
+    if (floatProperty != NULL) {
+        if (strcmp("set", command) == 0) *floatProperty = floatValue;
+        else printf("%f" NEWLINE, *floatProperty);
+    } else if (boolProperty != NULL) {
+        if (strcmp("set", command) == 0) *boolProperty = boolValue;
+        else printf("%s" NEWLINE, (*boolProperty==true? "true" : "false"));
+    } else {
+        returnVal = false;
+    }
+#pragma GCC diagnostic pop
+    return returnVal;
+}
+
+void Config::setUseTestFlashBank(bool useTestBank) {
+    // Sector 23 is at the top of the 2MB flash.  Program memory goes into the bottom at 0x0800 0000. 
+    if (useTestBank) {
+        flashSector = FLASH_Sector_22;
+        baseFlashAddress = 0x081C0000;  //  128k long
+    } else {
+        flashSector = FLASH_Sector_23;
+        baseFlashAddress = 0x081E0000;  //  128k long
+    }
+}
+
+void Config::loadLatest() {
+    if (!loadConfigFromFlash()) 
+        loadDefaults();
+}
+
+bool Config::isConsoleEnabled() {
+    return consoleEnabled;
+}
+
+void Config::setConsoleEnabled(bool enabled) {
+    consoleEnabled = enabled;
+}

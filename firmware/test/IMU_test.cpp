@@ -1,0 +1,57 @@
+#include <embUnit/embUnit.h>
+#include <IMU.h>
+
+#define ERROR_MARGIN 0.001f
+
+
+static void setUp(void) {
+}
+
+static void tearDown(void) {
+}
+
+static void test_getCompassAngleRadiansCCwN() {
+    /*  InvenSense MPU-9250
+     *  Accel & Gyro    Mag       Bearing
+     *       X ^        Y ^          ^  0 degrees
+     *         |          |          |
+     *         |          |          |
+     *   Y     |    X     |     <neg |  pos>
+     *   <-----O    <-----X          |  
+     *         Z          Z
+     */        
+    Config& config = Config::getInstance();
+    config.magXOffset = 31.0;
+    config.magYOffset = 60.0;
+    config.magXRange = 32.0;
+    config.magYRange = 33.0;
+    config.magDeclination = 8.5;
+
+    float angleExp = 5.65;
+//                                                  x       y      z
+    ImuSample sample = ImuSample(0, 0, 0, 0, 0, 0, -3.0f, -50.0f, 40.0f, 0);
+    float angle = sample.getCompassAngleRadiansCCwN();
+    if (angle < 0.0f) angle += 2.0f*PI;
+
+    TEST_ASSERT(fabsf(angle-angleExp) < 0.1f);
+}
+
+static void test_convertToReferenceFrame() {
+    ImuSample sample = ImuSample();
+    sample.ax = 10.0f;
+    Quaternion refFrame = Quaternion(0.0f, 0.0f, -PI/2.0f);
+    sample.convertToReferenceFrame(&refFrame);
+    TEST_ASSERT(fabsf(sample.ax) < 0.0001f);
+    TEST_ASSERT(fabsf(sample.ay+10.0f) < 0.0001f);
+    TEST_ASSERT(fabsf(sample.az) < 0.0001f);
+}
+
+TestRef IMU_tests(void) {
+    EMB_UNIT_TESTFIXTURES(fixtures) {
+        new_TestFixture("test_getCompassAngleRadiansCCwN", test_getCompassAngleRadiansCCwN),
+        new_TestFixture("test_convertToReferenceFrame", test_convertToReferenceFrame)
+    };
+
+    EMB_UNIT_TESTCALLER(IMU_tests, "IMU_tests", setUp, tearDown, fixtures);
+    return (TestRef)&IMU_tests;
+}

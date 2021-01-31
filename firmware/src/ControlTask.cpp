@@ -1,0 +1,153 @@
+#include <ControlTask.h>
+
+ControlTask::ControlTask(SensorTask* sensorTask) {
+    this->sensorTask = sensorTask;
+    this->pwmCapture = new PwmCapture();
+    this->pwmGen = new PwmGen();
+}
+
+
+void ControlTask::init() {
+}
+
+void ControlTask::task() {
+    this->controlState = ControlState::CONTROL_PASS_THROUGH_OPEN_LOOP;
+
+    this->pwmCapture->init();
+    this->pwmGen->init();
+    this->aircraft = instantiateAircraft();
+
+    while(true) {
+
+        ControlState requestedControlState = getRequestedControlState();
+        bool isGpsLocked = sensorTask->isGpsLocked();
+        bool isReceiverActive = pwmCapture->isReceiverSignalOK();
+        if (isStartingControlledFlight(this->controlState, requestedControlState, isGpsLocked, isReceiverActive)) {
+            sensorTask->calibrateSensors();
+            sensorTask->markOrigin();
+        }
+        this->controlState = getNextState(this->controlState, requestedControlState, isGpsLocked, isReceiverActive);
+
+        //if (this->controlState >= ControlState::GYRO_ONLY_CLOSED_LOOP) {
+            controlGyroDrift();
+        //}
+        sensorTask->setLoggingEnabled(aircraft->isLoggingEnabled());
+
+        processState(this->controlState);
+
+        this->isAlive = true;
+        vTaskDelay(10/portTICK_PERIOD_MS);
+    }
+}
+
+ControlState ControlTask::getControlState() {
+    return this->controlState;
+}
+
+
+bool ControlTask::isStartingControlledFlight(ControlState controlState, ControlState requestedControlState, bool isGpsLocked, bool isReceiverActive) {
+    if (isGpsLocked && isReceiverActive) {
+        if (requestedControlState >= ControlState::FULL_CLOSED_LOOP && controlState < ControlState::FULL_CLOSED_LOOP) {
+            return true;
+        }
+    }
+    return false;
+}
+
+ControlState ControlTask::getNextState(ControlState controlState, ControlState requestedControlState, bool isGpsLocked, bool isReceiverActive) {
+    ControlState nextState = controlState;
+
+    if (controlState <= ControlState::GYRO_ONLY_CLOSED_LOOP && requestedControlState >= ControlState::FULL_CLOSED_LOOP) {
+        if (isGpsLocked && isReceiverActive) {
+            nextState = requestedControlState;
+        } else {
+            nextState = MIN(requestedControlState, ControlState::GYRO_ONLY_CLOSED_LOOP);
+        }
+    } else {
+        nextState = requestedControlState;
+    }
+
+    if (nextState != controlState) {
+        std::string str = "ControlState changing from " + getControlStateLabel(controlState) + " to " + getControlStateLabel(nextState);
+        LOG_TEXT((char *)str.c_str())
+    }
+    return nextState;
+}
+
+void ControlTask::processState(ControlState controlState) {
+    switch(controlState) {
+        case ControlState::CONTROL_PASS_THROUGH_OPEN_LOOP:
+            aircraft->updatePassThroughOpenLoopControl();
+            break;
+        case ControlState::GYRO_ONLY_CLOSED_LOOP:
+            aircraft->updateGyroOnlyClosedLoopControl();
+            break;
+        case ControlState::FULL_CLOSED_LOOP:
+            aircraft->updateFullClosedLoopControl();
+            break;
+        case ControlState::SEMI_AUTONOMOUS_CLOSED_LOOP:
+            aircraft->updateSemiAutonomousClosedLoopControl();
+            break;
+    }
+}
+
+ControlState ControlTask::getRequestedControlState() {
+    float channel7Value = pwmCapture->getChannelValueZeroToOne(ChannelEnum::CHANNEL7);
+    if (channel7Value <= 0.33f) {
+        return ControlState::CONTROL_PASS_THROUGH_OPEN_LOOP;
+    } else if (channel7Value > 0.32f && channel7Value < 0.66f) {
+        return ControlState::GYRO_ONLY_CLOSED_LOOP;
+    }
+    return ControlState::GYRO_ONLY_CLOSED_LOOP;
+}
+
+bool ControlTask::isReceiverSignalOK() {
+    return pwmCapture->isReceiverSignalOK();
+}
+
+std::string ControlTask::getControlStateLabel(ControlState controlState) {
+    switch (controlState) {
+        case ControlState::CONTROL_PASS_THROUGH_OPEN_LOOP:
+            return "Control pass-through open-loop";
+            break;
+        case ControlState::GYRO_ONLY_CLOSED_LOOP:
+            return "Gyro only closed-loop";
+            break;
+        case ControlState::FULL_CLOSED_LOOP:
+            return "Full closed-loop";
+            break;
+        case ControlState::SEMI_AUTONOMOUS_CLOSED_LOOP:
+            return "Semi-autonomous closed-loop";
+            break;
+    }
+    return "Invalid state";
+}
+
+void ControlTask::controlGyroDrift() {
+    Quaternion* gyroFeedback = aircraft->getNewAttitudeForGyroFeedback();
+    if (gyroFeedback != NULL) {
+        sensorTask->getKinematics()->updateAttitudeFromFeedback(gyroFeedback);
+        sensorTask->updateReferenceFrameFromFeedback(gyroFeedback);
+        delete gyroFeedback;
+    }
+}
+
+Aircraft* ControlTask::instantiateAircraft() {
+    Aircraft* aircraft;
+    Config& config = Config::getInstance();
+    AircraftType aircraftType = config.aircraftType;
+    switch(aircraftType) {
+        case AircraftType::HELICOPTER:
+            aircraft = new Helicopter(sensorTask, pwmCapture, pwmGen);
+            aircraft->init();
+            break;
+//        case AircraftType::QUADCOPTER:
+//        case AircraftType::AIRPLANE:
+        default:
+            throw std::exception();
+            break;
+    }
+    return aircraft;
+}
+
+

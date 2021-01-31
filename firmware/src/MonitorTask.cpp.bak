@@ -1,0 +1,61 @@
+#include <MonitorTask.h>
+
+MonitorTask::MonitorTask(LEDs* leds, SensorTask* sensorTask, ControlTask* controlTask, AltimeterTask* altimeterTask, GpsTask* gpsTask) {
+    this->leds = leds;
+    this->sensorTask = sensorTask;
+    this->controlTask = controlTask;
+    this->altimeterTask = altimeterTask;
+    this->gpsTask = gpsTask;
+}
+
+
+void MonitorTask::init() {
+}
+
+void MonitorTask::task() {
+    if (watchDogResetFlag == RESET) {
+        vTaskDelay(portTICK_PERIOD_MS * 1000);  // let POST LEDs glow for a bit
+//        printf(NEWLINE "Monitor loop started." NEWLINE);
+    }
+
+    IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
+    IWDG_SetPrescaler(IWDG_Prescaler_128);    // 32kHz pre-scaled by /128
+    IWDG_SetReload(256); 
+    IWDG_ReloadCounter();
+#ifndef DISABLE_WATCHDOG
+    IWDG_Enable();
+#endif
+
+    bool state = true;
+
+    while(true) {
+
+        if (sensorTask->isAlive && controlTask->isAlive && altimeterTask->isAlive && gpsTask->isAlive) {
+            IWDG_ReloadCounter(); 
+            sensorTask->isAlive = false;
+            controlTask->isAlive = false;
+            altimeterTask->isAlive = false;
+            gpsTask->isAlive = false;
+        }
+
+
+//        uxTaskGetStackHighWaterMark(TaskHandle_t xTask);
+        size_t freeHeapSize = xPortGetFreeHeapSize();
+        size_t totalHeapSize = configTOTAL_HEAP_SIZE;
+        float heapFree = ((float)freeHeapSize/(float)totalHeapSize);
+
+//        leds->setBlueState(controlTask->getControlState() >= ControlState::FULL_CLOSED_LOOP);
+        if (sensorTask->isGpsLocked()) {
+            leds->setGreenState(state);
+            leds->setRedState(false);
+        } else {
+            leds->setGreenState(false);
+            leds->setRedState(state);
+        }
+        state = !state;
+
+        vTaskDelay(portTICK_PERIOD_MS * 1000 * heapFree);
+//        taskYIELD();
+    }
+}
+

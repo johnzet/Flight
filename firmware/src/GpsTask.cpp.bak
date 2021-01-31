@@ -1,0 +1,287 @@
+#include <GpsTask.h>
+#define DELIMITERS ","
+
+GpsSample::GpsSample(Vector* position, Vector* velocity, TickType_t timestamp) {
+    this->position = new Vector(*position);
+    this->velocity = new Vector(*velocity);
+    this->timestamp = timestamp;
+}
+
+GpsSample::GpsSample(GpsSample* gpsSample) {
+    if (gpsSample == NULL) return;
+    this->position = new Vector(*gpsSample->position);
+    this->velocity = new Vector(*gpsSample->velocity);
+    this->timestamp = gpsSample->timestamp;
+}
+
+GpsSample::~GpsSample() {
+    delete this->position;
+    delete this->velocity;
+}
+
+Vector* GpsSample::getNewPosition() {
+    return new Vector(*position);
+}
+
+Vector* GpsSample::getNewVelocity() {
+    return new Vector(*velocity);
+}
+
+TickType_t GpsSample::getTimestamp() {
+    return timestamp;
+}
+
+extern "C" {
+    GpsTask* irqGpsObject;
+}
+
+GpsTask::GpsTask() {
+    gpsMutex = xSemaphoreCreateMutex();
+    irqGpsObject = this;
+    parsableGpsBuffer[0] = NULL;
+    this->gpsSample = NULL;
+    this->originLatitude = 400.0;
+    this->originLongitude = 400.0;
+}
+
+GpsTask::~GpsTask() {
+    vSemaphoreDelete(gpsMutex);
+    delete this->gpsSample;
+}
+
+void GpsTask::init() {
+    initGpsUsart();
+    initGps();
+}
+
+void GpsTask::task() {
+    while (true) {
+        if (strlen(this->parsableGpsBuffer) > 0) {
+            parsePacket(this->parsableGpsBuffer);
+            this->parsableGpsBuffer[0] = NULL;
+        }
+        this->isAlive = true;
+        vTaskDelay(portTICK_PERIOD_MS * 100);
+    }
+}
+
+void GpsTask::initGpsUsart() {
+        GPIO_InitTypeDef GPIO_InitStructure;
+        USART_InitTypeDef USART_InitStructure;
+
+        RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART3, ENABLE);
+        RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);
+
+        /* Connect USART3 pins to AF7 */
+        // TX = PC11, RX = PC10
+        GPIO_PinAFConfig(GPIOC, GPIO_PinSource10, GPIO_AF_USART3);
+        GPIO_PinAFConfig(GPIOC, GPIO_PinSource11, GPIO_AF_USART3);
+
+        GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10 | GPIO_Pin_11;
+        GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+        GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+        GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+        GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+        GPIO_Init(GPIOC, &GPIO_InitStructure);
+
+        USART_InitStructure.USART_BaudRate = 4800;
+        USART_InitStructure.USART_WordLength = USART_WordLength_8b;
+        USART_InitStructure.USART_StopBits = USART_StopBits_1;
+        USART_InitStructure.USART_Parity = USART_Parity_No;
+        USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+//        USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_RTS_CTS;
+        USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+        USART_Init(USART3, &USART_InitStructure);
+
+        USART_Cmd(USART3, ENABLE);   
+
+}
+
+void GpsTask::initGps() {
+//        const char* baudMsg = "PSRF100,1,4800,8,1,0";
+//        sprintf(gpsBuffer, "$%s*%0X\r\n", baudMsg, calcChecksum(baudMsg, strlen(baudMsg)));
+//        sendStr(gpsBuffer, strlen(gpsBuffer));
+//         
+//        delay_ms(20);  // before scheduler starts
+//
+//        // set baud rate to 38400
+//        USART_InitTypeDef USART_InitStructure;
+//        USART_InitStructure.USART_BaudRate = 4800;
+//        USART_InitStructure.USART_WordLength = USART_WordLength_8b;
+//        USART_InitStructure.USART_StopBits = USART_StopBits_1;
+//        USART_InitStructure.USART_Parity = USART_Parity_No;
+//        USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+//        USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+//        USART_Init(USART3, &USART_InitStructure);
+//        USART_ITConfig(USART3, USART_IT_RXNE, ENABLE);
+
+
+        const char* ggaMsg = "PSRF103,00,00,00,01";
+        sprintf(gpsBuffer, "$%s*%0X\r\n", ggaMsg, calcChecksum(ggaMsg, strlen(ggaMsg)));
+        sendStr(gpsBuffer, strlen(gpsBuffer));
+
+        const char* gllMsg = "PSRF103,01,00,00,01";
+        sprintf(gpsBuffer, "$%s*%0X\r\n", gllMsg, calcChecksum(gllMsg, strlen(gllMsg)));
+        sendStr(gpsBuffer, strlen(gpsBuffer));
+
+        const char* gsaMsg = "PSRF103,02,00,00,01";
+        sprintf(gpsBuffer, "$%s*%0X\r\n", gsaMsg, calcChecksum(gsaMsg, strlen(gsaMsg)));
+        sendStr(gpsBuffer, strlen(gpsBuffer));
+
+        const char* gsvMsg = "PSRF103,03,00,00,01";
+        sprintf(gpsBuffer, "$%s*%0X\r\n", gsvMsg, calcChecksum(gsvMsg, strlen(gsvMsg)));
+        sendStr(gpsBuffer, strlen(gpsBuffer));
+
+        const char* rmcMsg = "PSRF103,04,00,01,01";
+        sprintf(gpsBuffer, "$%s*%0X\r\n", rmcMsg, calcChecksum(rmcMsg, strlen(rmcMsg)));
+        sendStr(gpsBuffer, strlen(gpsBuffer));
+
+        const char* vtgMsg = "PSRF103,05,00,00,01";
+        sprintf(gpsBuffer, "$%s*%0X\r\n", vtgMsg, calcChecksum(vtgMsg, strlen(vtgMsg)));
+        sendStr(gpsBuffer, strlen(gpsBuffer));
+
+        // config interrupts
+        USART_ITConfig(USART3, USART_IT_RXNE, ENABLE);
+        NVIC_InitTypeDef NVIC_InitStructure;
+        NVIC_InitStructure.NVIC_IRQChannel = USART3_IRQn;
+        NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
+        NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+        NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+        NVIC_Init(&NVIC_InitStructure);        
+}
+
+// this is the interrupt request handler (IRQ) for ALL USART3 interrupts
+extern "C" void USART3_IRQHandler(void){
+    if (irqGpsObject != NULL) {
+        irqGpsObject->irqHandler();
+    }
+}
+
+void GpsTask::irqHandler() {
+
+    static uint8_t cnt = 0;
+    if(USART_GetITStatus(USART3, USART_IT_RXNE)) {
+
+        char t = USART3->DR;
+
+        if (cnt >= GPS_BUFFER_LENGTH) {
+            cnt = 0;
+            gpsBuffer[0] = NULL;
+        } else if(t != '\r' && t != '\n') {
+            gpsBuffer[cnt] = t;
+            cnt++;
+        } else {
+            if (cnt > 0) {
+                gpsBuffer[cnt] = NULL;
+                strcpy(parsableGpsBuffer, gpsBuffer);
+            }
+            cnt = 0;
+            gpsBuffer[0] = NULL;
+        }
+    }
+
+    if(USART_GetITStatus(USART3, USART_IT_ORE)) {
+        volatile char t = NULL;
+        t = USART3->DR;
+        USART3->DR = 0x0 && t;  // keep the compiler from complaining about an unused variable
+        cnt = 0;
+        gpsBuffer[0] = NULL;
+    }
+}
+
+void GpsTask::sendChar(const char c) {
+    while (USART_GetFlagStatus(USART3, USART_FLAG_TXE) == RESET);
+    USART_SendData(USART3, (uint8_t)c);
+}
+
+void GpsTask::sendStr(const char* buffer, uint32_t length) {
+    for (uint32_t i=0; i<length; i++) {
+        sendChar(*(buffer+i));
+    }
+}
+
+uint8_t GpsTask::calcChecksum(const char* buffer, uint32_t length) {
+    uint8_t checksum = 0;
+    for (uint32_t i=0; i<length; i++) {
+        checksum ^= *(buffer+i);
+    }
+    return checksum;
+}
+
+void GpsTask::parsePacket(const char* buffer) {
+    double utcTime, lat=0, lon=0;
+    float speedKts=0, course=0;
+    int date=0;  //, cksum=0;
+    char status=NULL, lonInd=NULL, latInd=NULL;
+    // "$GPRMC,231645.010,A,3945.0545,N,10457.7586,W,0.32,357.56,010115,,,A*79\r\n"
+    int count = sscanf(buffer, "$GPRMC,%lf,%c,%lf,%c,%lf,%c,%f,%f,%i,,,A*", //%x\r\n", 
+        &utcTime, &status, &lat, &latInd, &lon, &lonInd, &speedKts, &course, &date);
+
+    if (count == 9) {
+        double latDecFloor = floor(lat/100.0);
+        double lonDecFloor = floor(lon/100.0);
+        this->utcTime = utcTime;
+        this->status = status;
+        this->latitude = latDecFloor + ((lat/100.0)-latDecFloor)*100.0/60.0;
+        this->latInd = latInd;
+        this->longitude = lonDecFloor + ((lon/100.0)-lonDecFloor)*100.0/60.0;
+        this->lonInd = lonInd;
+        this->speed = speedKts * 0.51444444444f;
+        this->course = course;
+        this->date = date;
+
+        TickType_t timeStamp = NULL;
+        timeStamp = xTaskGetTickCount();
+        calculateSampleData(timeStamp);
+    } else {
+        this->status = NULL;
+    }
+}
+
+bool GpsTask::isLocked() {
+    return status == 'A';
+}
+
+void GpsTask::calculateSampleData(TickType_t timestamp) {
+
+    if (this->originLatitude > 361.0 || this->originLongitude > 361.0) {
+        this->originLatitude = this->latitude;
+        this->originLongitude = this->longitude;
+    }
+
+    const float r = 637100.0f; // Earth's radius in meters
+    float northAngle = this->latitude - this->originLatitude;
+    float westAngle = this->longitude - this->originLongitude;
+    float north = r * sinf(northAngle * PI/180.0f);
+    float west = r * sinf(westAngle * PI/180.0f);
+    float bearing = (360.0f - this->course) * PI/180.0f; 
+    Vector position = Vector(north, west, 0);
+    Vector velocity = Vector(speed*cosf(bearing), speed*sinf(bearing), 0);
+    
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
+        xSemaphoreTake(gpsMutex, portMAX_DELAY);
+    }
+    if (this->gpsSample != NULL) delete this->gpsSample;
+    this->gpsSample = new GpsSample(&position, &velocity, timestamp);
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
+        xSemaphoreGive(gpsMutex);
+    }
+}
+
+GpsSample* GpsTask::getNewSample() {
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
+        xSemaphoreTake(gpsMutex, portMAX_DELAY);
+    }
+    GpsSample* newGpsSample = NULL;
+    if (this->gpsSample != NULL) newGpsSample = new GpsSample(this->gpsSample);
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
+        xSemaphoreGive(gpsMutex);
+    }
+
+    return newGpsSample;
+}
+
+void GpsTask::markOrigin() {
+    this->originLatitude = this->latitude;
+    this->originLongitude = this->longitude;
+}

@@ -1,0 +1,26 @@
+#include <embUnit/embUnit.h>
+#include <PwmGen.h>
+
+
+static void setUp(void) {
+}
+
+static void tearDown(void) {
+}
+
+static void test_PwmGen() {
+    PwmGen pwmGen = PwmGen();
+    float actual = 0.8f;
+    pwmGen.setChannelValueZeroToOne(ChannelEnum::CHANNEL1, actual);
+    float value = pwmGen.getChannelValue(ChannelEnum::CHANNEL1);
+    TEST_ASSERT(fabs(actual - value) < 0.001);
+}
+
+TestRef PwmGen_tests(void) {
+    EMB_UNIT_TESTFIXTURES(fixtures) {
+        new_TestFixture("test_PwmGen", test_PwmGen),
+    };
+
+    EMB_UNIT_TESTCALLER(PwmGen_tests, "PwmGen_tests", setUp, tearDown, fixtures);
+    return (TestRef)&PwmGen_tests;
+}

@@ -1,0 +1,382 @@
+#include <IMU.h>
+
+    /*  InvenSense MPU-9250
+     *  Accel & Gyro    Mag       Bearing
+     *       X ^        Y ^          ^  0 degrees
+     *         |          |          |
+     *         |          |          |
+     *   Y     |    X     |     <neg |  pos>
+     *   <-----O    <-----X          |  
+     *         Z          Z
+     */        
+
+extern "C" {
+    IMU* irqImuObject;
+}
+
+IMU::IMU(xQueueHandle queue) {
+    this->sampleQueue = queue;
+    this->sampleReadyFlag = false;
+    this->imuSample = NULL;
+    this->imuAddress = 0x68<<1;
+    this->compassAddress = 0x0C<<1;
+    this->imuI2C = new I2C(I2C2, imuAddress);
+    this->compassI2C = new I2C(I2C2, compassAddress);
+
+
+    irqImuObject = this;
+}
+
+void IMU::init() {
+    configureImuComm();
+    initImu();
+    initInterrupt();
+    cal = new ImuSample(0,0,0,0,0,0,0,0,0,0);
+    if (watchDogResetFlag == RESET) calibrate();
+    calibrating = false;
+}
+
+void IMU::configureImuComm() {
+    try {
+        GPIO_InitTypeDef GPIO_InitStruct;
+        I2C_InitTypeDef I2C_InitStruct;
+
+        RCC_APB1PeriphClockCmd(RCC_APB1Periph_I2C2, ENABLE);
+        RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
+
+        GPIO_InitStruct.GPIO_Pin = GPIO_Pin_10 | GPIO_Pin_11;
+        GPIO_InitStruct.GPIO_Mode = GPIO_Mode_AF;
+        GPIO_InitStruct.GPIO_Speed = GPIO_Speed_50MHz;
+        GPIO_InitStruct.GPIO_OType = GPIO_OType_OD;
+        GPIO_InitStruct.GPIO_PuPd = GPIO_PuPd_NOPULL;
+        GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+        GPIO_PinAFConfig(GPIOB, GPIO_PinSource10, GPIO_AF_I2C2);
+        GPIO_PinAFConfig(GPIOB, GPIO_PinSource11, GPIO_AF_I2C2);
+
+        I2C_InitStruct.I2C_ClockSpeed = 400000;
+        I2C_InitStruct.I2C_Mode = I2C_Mode_I2C;
+        I2C_InitStruct.I2C_DutyCycle = I2C_DutyCycle_2;
+        I2C_InitStruct.I2C_OwnAddress1 = 0x00;
+        I2C_InitStruct.I2C_Ack = I2C_Ack_Disable;
+        I2C_InitStruct.I2C_AcknowledgedAddress = I2C_AcknowledgedAddress_7bit;
+        I2C_Init(I2C2, &I2C_InitStruct);
+
+        I2C_Cmd(I2C2, ENABLE);\
+    }
+    catch (I2cTimeoutException& te) {
+        LOG_TEXT("I2C timeout exception occured in IMU::configureImuComm()");
+    }
+    catch (std::exception& e) {
+        LOG_TEXT("unknown exception occured in IMU::configureImuComm()");
+    }
+}
+
+void IMU::initImu() {
+    try {
+        // register map:  http://www.invensense.com/mems/gyro/documents/RM-MPU-9150A-00v4_2.pdf
+
+
+        imuI2C->write(0x6B, 0);     // wake up
+
+        imuI2C->write(0x37, 0x02);  // i2c bypass enable
+        imuI2C->write(0x6A, 0b00000000);  // disable i2c master
+        compassI2C->write(0x0A, 0x0F); // fuse ROM access
+        magCal[0] = compassI2C->read(0x10);
+        magCal[1] = compassI2C->read(0x11);
+        magCal[2] = compassI2C->read(0x12);
+        imuI2C->write(0x37, 0x00);  // i2c bypass disable
+    
+        // Sample rate divider - 1 kHz clock divided by 0x19 8-bit (plus 1)
+        // Final sample rate - 1 KHz to 3.906 Hz
+        uint8_t divider = floorf(1000.0f * Config::getInstance().dt - 1.0f); 
+
+//        uint8_t lpf = 0b101;  // for 10 Hz sample rate
+        uint8_t lpf = 0b011;  // for 50 Hz sample rate
+//        uint8_t lpf = 0b010;  // for 100 Hz sample rate
+
+        imuI2C->write(0x6B, 0x1);   // get clock from x-axis gyro
+        imuI2C->write(0x23, 0b01111001);  // FIFO enable
+        imuI2C->write(0x19, divider);   // sample rate divider
+        imuI2C->write(0x1A, lpf);  // low-pass filter
+        imuI2C->write(0x1B, 0b01000); // 500 dps gyro full-scale range
+        imuI2C->write(0x1C, 0b01000); // 4g accel full-scale range
+
+        imuI2C->write(0x25, 0x8C);  // slave 0 setup
+        imuI2C->write(0x26, 0x1);   // slave 0 setup
+        imuI2C->write(0x27, 0x89);  // slave 0 setup
+        imuI2C->write(0x28, compassAddress>>1);   // slave 1 setup
+        imuI2C->write(0x29, 0xA);   // slave 1 setup
+        imuI2C->write(0x2A, 0x81);  // slave 1 setup
+        imuI2C->write(0x64, 0x1);   // slave 1 data out
+        imuI2C->write(0x24, 0x48);  // wait for slave data
+        imuI2C->write(0x6A, 0b01100000);  // enable i2c master and FIFO
+
+        imuI2C->write(0x38, 0x1);   // enable interrupt
+    }
+    catch (I2cTimeoutException& te) {
+        LOG_TEXT("I2C timeout exception occured in IMU::initImu()");
+    }
+    catch (std::exception& e) {
+        LOG_TEXT("unknown exception occured in IMU::initImu()");
+    }
+}
+
+void IMU::initInterrupt() {
+    GPIO_InitTypeDef GPIO_InitStructure;
+    EXTI_InitTypeDef   EXTI_InitStructure;
+    NVIC_InitTypeDef   NVIC_InitStructure;
+
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG, ENABLE);
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOI, ENABLE);
+
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
+    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_8;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
+    GPIO_Init(GPIOI, &GPIO_InitStructure);
+
+    SYSCFG_EXTILineConfig(EXTI_PortSourceGPIOI, EXTI_PinSource8);
+
+    EXTI_InitStructure.EXTI_Line = EXTI_Line8;
+    EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
+    EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;  
+    EXTI_InitStructure.EXTI_LineCmd = ENABLE;
+    EXTI_Init(&EXTI_InitStructure);
+
+    NVIC_InitStructure.NVIC_IRQChannel = EXTI9_5_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = configHIGHEST_PRIORITY_INTERRUPT;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+}
+
+void IMU::calibrate() {
+    calibrating = true;
+//    delay_ms(200);
+    int ignoreSamples = 5;
+    int samples = 20;
+    float ax = 0.0;
+    float ay = 0.0;
+    float az = 0.0;
+    float gx = 0.0;
+    float gy = 0.0;
+    float gz = 0.0;
+
+    for (int i=0; i<ignoreSamples; i++) {
+        while(!isSampleReady()) delay_ms(10);
+        getSample();
+        sampleReadyFlag = false;
+    }
+    for (int i=0; i<samples; i++) {
+        while(!isSampleReady()) delay_ms(10);
+        ImuSample* sample = getSample();
+        sampleReadyFlag = false;
+        ax += sample->ax;
+        ay += sample->ay;
+        az += sample->az - 1.0f;
+        gx += sample->gx;
+        gy += sample->gy;
+        gz += sample->gz;
+    }
+
+    ax /= ((float)samples);
+    ay /= ((float)samples);
+    az /= ((float)samples);
+    gx /= ((float)samples);
+    gy /= ((float)samples);
+    gz /= ((float)samples);
+
+    if (this->cal != NULL) delete this->cal;
+    this->cal = new ImuSample(-ax, -ay, -az, -gx, -gy, -gz, 0, 0, 0, 0);
+    calibrating = false;
+}
+
+
+extern "C" void EXTI9_5_IRQHandler() {
+    if(EXTI_GetITStatus(EXTI_Line8)) {
+        EXTI_ClearFlag(EXTI_Line8);
+        if (irqImuObject != NULL) {
+            irqImuObject->irqHandler();
+        }
+    } else {
+        EXTI_ClearFlag(0xFFFF);
+    }
+}
+
+void IMU::irqHandler() {
+    try {
+        uint8_t b[30];
+        uint16_t fifoBytes = (imuI2C->read(0x72)<<8) + imuI2C->read(0x73);
+        if (fifoBytes > 30) {
+            uint8_t userCtl = imuI2C->read(0x6A);
+            imuI2C->write(0x6A, userCtl | 0b100);  // FIFO reset
+            return;
+        }
+        imuI2C->read(0x74, fifoBytes, b);
+        if (fifoBytes == 21) {
+            // 6 bytes accel, 6 bytes gyro, 3 bytes ignore, 6 bytes magnetometer
+            float ax, ay, az, gx, gy, gz, mx, my, mz;
+            ax = ((int16_t)((b[0]<<8)+b[1]))/8192.0;
+            ay = ((int16_t)((b[2]<<8)+b[3]))/8192.0;
+            az = ((int16_t)((b[4]<<8)+b[5]))/8192.0;
+            gx = ((int16_t)((b[6]<<8)+b[7]))/65.536;
+            gy = ((int16_t)((b[8]<<8)+b[9]))/65.536;
+            gz = ((int16_t)((b[10]<<8)+b[11]))/65.536;
+            mx = ((int16_t)((b[15]<<8)+b[14]))/3.333;
+            my = ((int16_t)((b[17]<<8)+b[16]))/3.333;
+            mz = ((int16_t)((b[19]<<8)+b[18]))/3.333;
+
+            mx *= (magCal[0]-128)*0.5f/128+1;
+            my *= (magCal[1]-128)*0.5f/128+1;
+            mz *= (magCal[2]-128)*0.5f/128+1;
+
+            imuSample.ax = ax + cal->ax;
+            imuSample.ay = ay + cal->ay; 
+            imuSample.az = az + cal->az; 
+            imuSample.gx = gx + cal->gx; 
+            imuSample.gy = gy + cal->gy; 
+            imuSample.gz = gz + cal->gz; 
+            imuSample.mx = mx;
+            imuSample.my = my;
+            imuSample.mz = mz;
+            imuSample.altAmsl = 0;
+            sampleReadyFlag = true;
+            if (this->sampleQueue != NULL && !calibrating) {
+                BaseType_t pxHigherPriorityTaskWoken;
+                xQueueOverwriteFromISR(this->sampleQueue, &imuSample, &pxHigherPriorityTaskWoken);
+            }
+        }
+    }
+    catch (I2cTimeoutException& te) {
+        LOG_TEXT("I2C timeout exception occured in IMU::irqHandler()");
+    }
+    catch (std::exception& e) {
+        LOG_TEXT("unknown exception occured in IMU::irqHandler()");
+    }
+}
+
+bool IMU::isSampleReady() {
+    return sampleReadyFlag;
+}
+
+ImuSample* IMU::getSample(void) {
+    if (!calibrating) {
+        sampleReadyFlag = false;
+    }
+    return &imuSample;
+}
+
+ImuSample::ImuSample(float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float, float altAmsl) {
+    this->ax = ax;
+    this->ay = ay;
+    this->az = az;
+    this->gx = gx;
+    this->gy = gy;
+    this->gz = gz;
+    this->mx = mx;
+    this->my = my;
+    this->mz = mz;
+    this->altAmsl = altAmsl;
+}
+
+ImuSample::ImuSample(ImuSample *imuSample) {
+    this->ax = imuSample->ax;
+    this->ay = imuSample->ay;
+    this->az = imuSample->az;
+    this->gx = imuSample->gx;
+    this->gy = imuSample->gy;
+    this->gz = imuSample->gz;
+    this->mx = imuSample->mx;
+    this->my = imuSample->my;
+    this->mz = imuSample->mz;
+    this->altAmsl = imuSample->altAmsl;
+}
+
+ImuSample::ImuSample() {}
+
+Vector* ImuSample::getNewLinearAccelerationMps() {
+    const float g = 9.81f;
+    return new Vector(this->ax*g, this->ay*g, this->az*g);
+}
+
+Vector* ImuSample::getNewAngularVelocityRps() {
+    const float c = 3.1415926535f/180;
+    return new Vector(this->gx*c, this->gy*c, this->gz*c);
+}
+
+#define NEWLINE "\n\r"
+
+float ImuSample::getCompassAngleRadiansCCwN() {
+    Config& config = Config::getInstance();
+    float x = (this->mx + config.magXOffset)/config.magXRange - 0.5f;
+    float y = (this->my + config.magYOffset)/config.magYRange - 0.5f;
+    float angle = atan2f(y, x) - (config.magDeclination * PI/180.0f);
+    if (angle < 0.0f) angle += 2.0f*PI;
+
+//#pragma GCC diagnostic push
+//#pragma GCC diagnostic ignored "-Wdouble-promotion"
+//    printf("Magnetometer x,y,z = %f,  %f,  %f" NEWLINE, this->mx, this->my, this->mz);
+//#pragma GCC diagnostic pop
+
+
+    return angle;
+}
+
+void ImuSample::convertToReferenceFrame(Quaternion* referenceFrame) {
+    Vector linAccel = Vector(ax, ay, az);
+    Vector angVel = Vector(gx, gy, gz);
+    Vector* refLinAccel = referenceFrame->getNewSandwich(&linAccel);
+    Vector* refAngVel = referenceFrame->getNewSandwich(&angVel);
+    this->ax = refLinAccel->x;
+    this->ay = refLinAccel->y;
+    this->az = refLinAccel->z;
+    this->gx = refAngVel->x;
+    this->gy = refAngVel->y;
+    this->gz = refAngVel->z;
+
+    delete refLinAccel;
+    delete refAngVel;
+}
+
+
+ImuMessage::ImuMessage(ImuSample *imuSample) {
+    this->imuSample = ImuSample(imuSample);
+}
+
+char* ImuMessage::toString(char* buffer, uint16_t length) {
+    return _toString(buffer, length, "Ticks: %i  Accel: %+1.3f %+1.3f %+1.3f  Gyro: %+6.1f %+6.1f %+6.1f  Compass: %+4.0f %+4.0f %+4.0f  Alt: %7.1f");
+}
+
+char* ImuMessage::toDataString(char* buffer, uint16_t length) {
+    return _toString(buffer, length, "%i,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f");
+}
+
+char* ImuMessage::_toString(char* buffer, uint16_t length, const char* formatStr) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdouble-promotion"
+    
+    if (length < 200) {
+        sprintf(buffer, "buffer too small");
+    } else {
+      sprintf(buffer, formatStr,
+          this->time,
+          this->imuSample.ax, this->imuSample.ay, this->imuSample.az, 
+          this->imuSample.gx, this->imuSample.gy, this->imuSample.gz,
+          this->imuSample.mx, this->imuSample.my, this->imuSample.mz,
+          this->imuSample.altAmsl
+      );
+    }
+    return buffer;
+
+#pragma GCC diagnostic pop
+}
+
+uint16_t ImuMessage::getSize() {
+    return sizeof(*this);
+}
+
+char* ImuMessage::getShortType() {
+    return "imu";
+}
+

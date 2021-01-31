@@ -1,0 +1,57 @@
+#include <embUnit/embUnit.h>
+#include <ControlTask.h>
+
+
+static void setUp(void) {
+}
+
+static void tearDown(void) {
+}
+
+void test_initialReferenceFrame() {
+    SensorTask sensorTask = SensorTask(NULL, NULL, NULL);
+    ImuSample imuSample = ImuSample(1.0f,2.0f,3.0f,0,0,0,0,0,0,1000.0f);
+    sensorTask.convertImuSampleToAircraftReferenceFrame(&imuSample);
+    TEST_ASSERT(fabsf(imuSample.ax - 2.0f) < 0.001f);
+    TEST_ASSERT(fabsf(imuSample.ay + 1.0f) < 0.001f);
+    TEST_ASSERT(fabsf(imuSample.az - 3.0f) < 0.001f);
+    TEST_ASSERT(fabsf(imuSample.gx) < 0.001f);
+    TEST_ASSERT(fabsf(imuSample.gy) < 0.001f);
+    TEST_ASSERT(fabsf(imuSample.gz) < 0.001f);
+    TEST_ASSERT(fabsf(imuSample.mx) < 0.001f);
+    TEST_ASSERT(fabsf(imuSample.my) < 0.001f);
+    TEST_ASSERT(fabsf(imuSample.mz) < 0.001f);
+    TEST_ASSERT(fabsf(imuSample.altAmsl - 1000.0f) < 0.001f);
+}
+
+void test_referenceFrameAdjustment() {
+    SensorTask sensorTask = SensorTask(NULL, NULL, NULL);
+    ImuSample imuSample = ImuSample(0.1f,-0.2f,0.975f,0,0,0,0,0,0,1000);
+    Quaternion adjustment = Quaternion(0.1f,-0.2f,0); // rotation towards the lower-right
+    Config::getInstance().accel2frameFeedback = 0.5;
+    for (int i=0; i<100; i++) {
+        sensorTask.updateReferenceFrameFromFeedback(&adjustment);
+    }
+
+    sensorTask.convertImuSampleToAircraftReferenceFrame(&imuSample);
+    TEST_ASSERT(fabsf(imuSample.ax) < 0.01f);
+    TEST_ASSERT(fabsf(imuSample.ay) < 0.01f);
+    TEST_ASSERT(fabsf(imuSample.az - 1.0f) < 0.01f);
+    TEST_ASSERT(fabsf(imuSample.gx) < 0.001f);
+    TEST_ASSERT(fabsf(imuSample.gy) < 0.001f);
+    TEST_ASSERT(fabsf(imuSample.gz) < 0.001f);
+    TEST_ASSERT(fabsf(imuSample.mx) < 0.001f);
+    TEST_ASSERT(fabsf(imuSample.my) < 0.001f);
+    TEST_ASSERT(fabsf(imuSample.mz) < 0.001f);
+    TEST_ASSERT(fabsf(imuSample.altAmsl - 1000.0f) < 0.001f);
+}
+
+TestRef SensorTask_tests(void) {
+    EMB_UNIT_TESTFIXTURES(fixtures) {
+        new_TestFixture("test_initialReferenceFrame", test_initialReferenceFrame),
+        new_TestFixture("test_referenceFrameAdjustment", test_referenceFrameAdjustment)
+    };
+
+    EMB_UNIT_TESTCALLER(SensorTask_tests, "SensorTask_tests", setUp, tearDown, fixtures);
+    return (TestRef)&SensorTask_tests;
+}

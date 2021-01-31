@@ -1,0 +1,46 @@
+#include <embUnit/embUnit.h>
+#include <Config.h>
+
+static void setUp(void) {
+}
+
+static void tearDown(void) {
+}
+
+static void test_Singleton() {
+    Config& inst1 = Config::getInstance();
+    Config& inst2 = Config::getInstance();
+    float dt = inst1.dt;
+    inst1.dt = 1;
+    inst2.dt = 4;
+    TEST_ASSERT_NOT_NULL(&inst1);
+    TEST_ASSERT_NOT_NULL(&inst2);
+    TEST_ASSERT(&inst1 == &inst2);
+    TEST_ASSERT(inst1.dt == 4);
+    TEST_ASSERT(inst2.dt == 4);
+    inst1.dt = dt;
+    TEST_ASSERT(inst2.dt <= 2);
+}
+
+static void test_properties() {
+    Config& c = Config::getInstance();
+
+    TEST_ASSERT(c.dt > 0.001f && c.dt < 2.0f);
+    TEST_ASSERT(c.yawPid.p > 0.1f);
+
+    TEST_ASSERT(c.magXOffset != 0);
+    TEST_ASSERT(c.magYOffset!= 0);
+    TEST_ASSERT(c.magXRange > 10.0f);
+    TEST_ASSERT(c.magYRange > 10.0f);
+    TEST_ASSERT(c.magDeclination > 5.0f && c.magDeclination < 12.0f);
+}
+
+TestRef Config_tests(void) {
+    EMB_UNIT_TESTFIXTURES(fixtures) {
+        new_TestFixture("test_Singleton", test_Singleton),
+        new_TestFixture("test_properties", test_properties)
+    };
+
+    EMB_UNIT_TESTCALLER(Config_tests, "Config_tests", setUp, tearDown, fixtures);
+    return (TestRef)&Config_tests;
+}

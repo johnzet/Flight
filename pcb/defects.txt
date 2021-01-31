@@ -1,0 +1,39 @@
+Rev A
+
+Schematic
+
+x	Either add a series 3 ohm resistor in series with the output cap or switch to a more stable 3.3v regulator.  
+x	Remove the small bypass cap at the output of the 3.3v regulator
+x	Add 10K pull-up resistors to the SWD and JTAG lines.
+x	Connect the Vref line to 3.3V at the SWD connector.
+x	XBee RTS and CTS need to be swapped over (RTS<->CTS & CTS<->RTS)	
+x	Add an 8MHz crystal or ceramic resonator between PH0 and PH1
+x	Run an interrupt line from INT of the IMU to PI8
+	Ferrite on the power input?
+	
+
+
+PCB
+
+x	Next to the receiver and servo connectors are 2 sets of bypass caps.  The small one sucked-up against the big one in each pair.
+	Silkscreen is on top of pads for some bypass caps.
+x	Larger socket for the receiver
+
+
+Rev B
+
+PCB
+
+	GPS socket pins are backwards and wrong voltage
+		- should probably add zero-ohm jumpers to config voltage
+		- pins 5 and 6 might need zero-ohm jumpers to config them
+	Move the speaker away from the magnetometer - Do we need a speaker?  Can ESCs beep through the motor?
+	Silkscreen for C8 & C9 are misplaced
+	Remove or shrink all existing test jumpers
+	Add a couple test points to misc GPIO pins after layout is complete
+	Move the barometer (contains a temperature sensor) away from the linear regulator
+	Add battery polarity protection
+	Maybe add battery overvoltage protection?
+	Supply wire holes should be at least 50% bigger plus maybe there should be some sort of strain relief
+	More scope probe ground points?
+

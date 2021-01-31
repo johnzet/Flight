@@ -1,0 +1,383 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+ <key>clang_version</key>
+<string>clang version 3.5.0 (tags/RELEASE_350/final)</string>
+ <key>files</key>
+ <array>
+  <string>include\main.h</string>
+ </array>
+ <key>diagnostics</key>
+ <array>
+  <dict>
+   <key>path</key>
+   <array>
+    <dict>
+     <key>kind</key><string>event</string>
+     <key>location</key>
+     <dict>
+      <key>line</key><integer>134</integer>
+      <key>col</key><integer>9</integer>
+      <key>file</key><integer>0</integer>
+     </dict>
+     <key>ranges</key>
+     <array>
+       <array>
+        <dict>
+         <key>line</key><integer>134</integer>
+         <key>col</key><integer>22</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+        <dict>
+         <key>line</key><integer>134</integer>
+         <key>col</key><integer>56</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+       </array>
+     </array>
+     <key>depth</key><integer>0</integer>
+     <key>extended_message</key>
+     <string>Value stored to &apos;stacked_r0&apos; is never read</string>
+     <key>message</key>
+     <string>Value stored to &apos;stacked_r0&apos; is never read</string>
+    </dict>
+   </array>
+   <key>description</key><string>Value stored to &apos;stacked_r0&apos; is never read</string>
+   <key>category</key><string>Dead store</string>
+   <key>type</key><string>Dead assignment</string>
+  <key>issue_context_kind</key><string>function</string>
+  <key>issue_context</key><string>HardFault_HandlerC</string>
+  <key>issue_hash</key><string>19</string>
+  <key>location</key>
+  <dict>
+   <key>line</key><integer>134</integer>
+   <key>col</key><integer>9</integer>
+   <key>file</key><integer>0</integer>
+  </dict>
+  </dict>
+  <dict>
+   <key>path</key>
+   <array>
+    <dict>
+     <key>kind</key><string>event</string>
+     <key>location</key>
+     <dict>
+      <key>line</key><integer>135</integer>
+      <key>col</key><integer>9</integer>
+      <key>file</key><integer>0</integer>
+     </dict>
+     <key>ranges</key>
+     <array>
+       <array>
+        <dict>
+         <key>line</key><integer>135</integer>
+         <key>col</key><integer>22</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+        <dict>
+         <key>line</key><integer>135</integer>
+         <key>col</key><integer>56</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+       </array>
+     </array>
+     <key>depth</key><integer>0</integer>
+     <key>extended_message</key>
+     <string>Value stored to &apos;stacked_r1&apos; is never read</string>
+     <key>message</key>
+     <string>Value stored to &apos;stacked_r1&apos; is never read</string>
+    </dict>
+   </array>
+   <key>description</key><string>Value stored to &apos;stacked_r1&apos; is never read</string>
+   <key>category</key><string>Dead store</string>
+   <key>type</key><string>Dead assignment</string>
+  <key>issue_context_kind</key><string>function</string>
+  <key>issue_context</key><string>HardFault_HandlerC</string>
+  <key>issue_hash</key><string>20</string>
+  <key>location</key>
+  <dict>
+   <key>line</key><integer>135</integer>
+   <key>col</key><integer>9</integer>
+   <key>file</key><integer>0</integer>
+  </dict>
+  </dict>
+  <dict>
+   <key>path</key>
+   <array>
+    <dict>
+     <key>kind</key><string>event</string>
+     <key>location</key>
+     <dict>
+      <key>line</key><integer>136</integer>
+      <key>col</key><integer>9</integer>
+      <key>file</key><integer>0</integer>
+     </dict>
+     <key>ranges</key>
+     <array>
+       <array>
+        <dict>
+         <key>line</key><integer>136</integer>
+         <key>col</key><integer>22</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+        <dict>
+         <key>line</key><integer>136</integer>
+         <key>col</key><integer>56</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+       </array>
+     </array>
+     <key>depth</key><integer>0</integer>
+     <key>extended_message</key>
+     <string>Value stored to &apos;stacked_r2&apos; is never read</string>
+     <key>message</key>
+     <string>Value stored to &apos;stacked_r2&apos; is never read</string>
+    </dict>
+   </array>
+   <key>description</key><string>Value stored to &apos;stacked_r2&apos; is never read</string>
+   <key>category</key><string>Dead store</string>
+   <key>type</key><string>Dead assignment</string>
+  <key>issue_context_kind</key><string>function</string>
+  <key>issue_context</key><string>HardFault_HandlerC</string>
+  <key>issue_hash</key><string>21</string>
+  <key>location</key>
+  <dict>
+   <key>line</key><integer>136</integer>
+   <key>col</key><integer>9</integer>
+   <key>file</key><integer>0</integer>
+  </dict>
+  </dict>
+  <dict>
+   <key>path</key>
+   <array>
+    <dict>
+     <key>kind</key><string>event</string>
+     <key>location</key>
+     <dict>
+      <key>line</key><integer>137</integer>
+      <key>col</key><integer>9</integer>
+      <key>file</key><integer>0</integer>
+     </dict>
+     <key>ranges</key>
+     <array>
+       <array>
+        <dict>
+         <key>line</key><integer>137</integer>
+         <key>col</key><integer>22</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+        <dict>
+         <key>line</key><integer>137</integer>
+         <key>col</key><integer>56</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+       </array>
+     </array>
+     <key>depth</key><integer>0</integer>
+     <key>extended_message</key>
+     <string>Value stored to &apos;stacked_r3&apos; is never read</string>
+     <key>message</key>
+     <string>Value stored to &apos;stacked_r3&apos; is never read</string>
+    </dict>
+   </array>
+   <key>description</key><string>Value stored to &apos;stacked_r3&apos; is never read</string>
+   <key>category</key><string>Dead store</string>
+   <key>type</key><string>Dead assignment</string>
+  <key>issue_context_kind</key><string>function</string>
+  <key>issue_context</key><string>HardFault_HandlerC</string>
+  <key>issue_hash</key><string>22</string>
+  <key>location</key>
+  <dict>
+   <key>line</key><integer>137</integer>
+   <key>col</key><integer>9</integer>
+   <key>file</key><integer>0</integer>
+  </dict>
+  </dict>
+  <dict>
+   <key>path</key>
+   <array>
+    <dict>
+     <key>kind</key><string>event</string>
+     <key>location</key>
+     <dict>
+      <key>line</key><integer>139</integer>
+      <key>col</key><integer>9</integer>
+      <key>file</key><integer>0</integer>
+     </dict>
+     <key>ranges</key>
+     <array>
+       <array>
+        <dict>
+         <key>line</key><integer>139</integer>
+         <key>col</key><integer>23</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+        <dict>
+         <key>line</key><integer>139</integer>
+         <key>col</key><integer>57</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+       </array>
+     </array>
+     <key>depth</key><integer>0</integer>
+     <key>extended_message</key>
+     <string>Value stored to &apos;stacked_r12&apos; is never read</string>
+     <key>message</key>
+     <string>Value stored to &apos;stacked_r12&apos; is never read</string>
+    </dict>
+   </array>
+   <key>description</key><string>Value stored to &apos;stacked_r12&apos; is never read</string>
+   <key>category</key><string>Dead store</string>
+   <key>type</key><string>Dead assignment</string>
+  <key>issue_context_kind</key><string>function</string>
+  <key>issue_context</key><string>HardFault_HandlerC</string>
+  <key>issue_hash</key><string>24</string>
+  <key>location</key>
+  <dict>
+   <key>line</key><integer>139</integer>
+   <key>col</key><integer>9</integer>
+   <key>file</key><integer>0</integer>
+  </dict>
+  </dict>
+  <dict>
+   <key>path</key>
+   <array>
+    <dict>
+     <key>kind</key><string>event</string>
+     <key>location</key>
+     <dict>
+      <key>line</key><integer>140</integer>
+      <key>col</key><integer>9</integer>
+      <key>file</key><integer>0</integer>
+     </dict>
+     <key>ranges</key>
+     <array>
+       <array>
+        <dict>
+         <key>line</key><integer>140</integer>
+         <key>col</key><integer>22</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+        <dict>
+         <key>line</key><integer>140</integer>
+         <key>col</key><integer>56</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+       </array>
+     </array>
+     <key>depth</key><integer>0</integer>
+     <key>extended_message</key>
+     <string>Value stored to &apos;stacked_lr&apos; is never read</string>
+     <key>message</key>
+     <string>Value stored to &apos;stacked_lr&apos; is never read</string>
+    </dict>
+   </array>
+   <key>description</key><string>Value stored to &apos;stacked_lr&apos; is never read</string>
+   <key>category</key><string>Dead store</string>
+   <key>type</key><string>Dead assignment</string>
+  <key>issue_context_kind</key><string>function</string>
+  <key>issue_context</key><string>HardFault_HandlerC</string>
+  <key>issue_hash</key><string>25</string>
+  <key>location</key>
+  <dict>
+   <key>line</key><integer>140</integer>
+   <key>col</key><integer>9</integer>
+   <key>file</key><integer>0</integer>
+  </dict>
+  </dict>
+  <dict>
+   <key>path</key>
+   <array>
+    <dict>
+     <key>kind</key><string>event</string>
+     <key>location</key>
+     <dict>
+      <key>line</key><integer>141</integer>
+      <key>col</key><integer>9</integer>
+      <key>file</key><integer>0</integer>
+     </dict>
+     <key>ranges</key>
+     <array>
+       <array>
+        <dict>
+         <key>line</key><integer>141</integer>
+         <key>col</key><integer>22</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+        <dict>
+         <key>line</key><integer>141</integer>
+         <key>col</key><integer>56</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+       </array>
+     </array>
+     <key>depth</key><integer>0</integer>
+     <key>extended_message</key>
+     <string>Value stored to &apos;stacked_pc&apos; is never read</string>
+     <key>message</key>
+     <string>Value stored to &apos;stacked_pc&apos; is never read</string>
+    </dict>
+   </array>
+   <key>description</key><string>Value stored to &apos;stacked_pc&apos; is never read</string>
+   <key>category</key><string>Dead store</string>
+   <key>type</key><string>Dead assignment</string>
+  <key>issue_context_kind</key><string>function</string>
+  <key>issue_context</key><string>HardFault_HandlerC</string>
+  <key>issue_hash</key><string>26</string>
+  <key>location</key>
+  <dict>
+   <key>line</key><integer>141</integer>
+   <key>col</key><integer>9</integer>
+   <key>file</key><integer>0</integer>
+  </dict>
+  </dict>
+  <dict>
+   <key>path</key>
+   <array>
+    <dict>
+     <key>kind</key><string>event</string>
+     <key>location</key>
+     <dict>
+      <key>line</key><integer>142</integer>
+      <key>col</key><integer>9</integer>
+      <key>file</key><integer>0</integer>
+     </dict>
+     <key>ranges</key>
+     <array>
+       <array>
+        <dict>
+         <key>line</key><integer>142</integer>
+         <key>col</key><integer>23</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+        <dict>
+         <key>line</key><integer>142</integer>
+         <key>col</key><integer>57</integer>
+         <key>file</key><integer>0</integer>
+        </dict>
+       </array>
+     </array>
+     <key>depth</key><integer>0</integer>
+     <key>extended_message</key>
+     <string>Value stored to &apos;stacked_psr&apos; is never read</string>
+     <key>message</key>
+     <string>Value stored to &apos;stacked_psr&apos; is never read</string>
+    </dict>
+   </array>
+   <key>description</key><string>Value stored to &apos;stacked_psr&apos; is never read</string>
+   <key>category</key><string>Dead store</string>
+   <key>type</key><string>Dead assignment</string>
+  <key>issue_context_kind</key><string>function</string>
+  <key>issue_context</key><string>HardFault_HandlerC</string>
+  <key>issue_hash</key><string>27</string>
+  <key>location</key>
+  <dict>
+   <key>line</key><integer>142</integer>
+   <key>col</key><integer>9</integer>
+   <key>file</key><integer>0</integer>
+  </dict>
+  </dict>
+ </array>
+</dict>
+</plist>

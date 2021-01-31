@@ -1,0 +1,178 @@
+#include <main.h>
+
+bool runUnitTests() {
+    size_t startingFreeHeapSize = xPortGetFreeHeapSize();
+    TestRunner_start();
+    TestRunner_runTest(Logger_tests());
+    TestRunner_runTest(Config_tests());
+    TestRunner_runTest(IMU_tests());
+    TestRunner_runTest(Vector_tests());
+    TestRunner_runTest(Quaternion_tests());
+    TestRunner_runTest(Kinematics_tests());
+    TestRunner_runTest(Pid_tests());
+    TestRunner_runTest(I2C_tests());
+    TestRunner_runTest(GpsTask_tests());
+    TestRunner_runTest(ControlTask_tests());
+    TestRunner_runTest(SensorTask_tests());
+    TestRunner_runTest(PwmCapture_tests());
+    TestRunner_runTest(PwmGen_tests());
+    TestRunner_runTest(Helicopter_tests());
+    TestRunner_runTest(CLI_tests());
+    TestRunner_end();
+    size_t endingFreeHeapSize = xPortGetFreeHeapSize();
+    if (isDebugPrintfEnabled()) debug_printf("%i byes of heap memory growth during tests" NEWLINE, startingFreeHeapSize-endingFreeHeapSize);
+
+#ifdef UNIT_TESTS_ONLY
+    startingFreeHeapSize = xPortGetFreeHeapSize();
+    TestRunner_start();
+    TestRunner_runTest(Logger_tests());
+    TestRunner_runTest(Config_tests());
+    TestRunner_runTest(IMU_tests());
+    TestRunner_runTest(Vector_tests());
+    TestRunner_runTest(Quaternion_tests());
+    TestRunner_runTest(Kinematics_tests());
+    TestRunner_runTest(Pid_tests());
+    TestRunner_runTest(I2C_tests());
+    TestRunner_runTest(GpsTask_tests());
+    TestRunner_runTest(ControlTask_tests());
+    TestRunner_runTest(SensorTask_tests());
+    TestRunner_runTest(PwmCapture_tests());
+    TestRunner_runTest(PwmGen_tests());
+    TestRunner_runTest(Helicopter_tests());
+    TestRunner_runTest(CLI_tests());
+    TestRunner_end();
+    endingFreeHeapSize = xPortGetFreeHeapSize();
+    if (isDebugPrintfEnabled()) debug_printf("%i byes of heap memory leak during tests" NEWLINE, startingFreeHeapSize-endingFreeHeapSize);
+#endif
+
+    TestResult testResult = TestRunner_getResult();
+    return (testResult.failureCount == 0);
+}
+
+bool runPeripheralTests() {
+    return Logger::getInstance().testLogger();
+}
+
+void initPll() {
+    uint32_t control = __get_CONTROL();
+    __set_CONTROL(control | 0b100); // enable the FPU and privileged mode
+
+    PWR_OverDriveCmd(ENABLE);
+    PWR_OverDriveSWCmd(ENABLE);
+
+    RCC_HSEConfig(RCC_HSE_ON);
+    RCC_PLLConfig(RCC_PLLSource_HSE, 4, 360, 4, 15);
+
+    // switch to PLL clock as system clock
+    RCC_SYSCLKConfig(RCC_SYSCLKSource_PLLCLK);
+    RCC_HCLKConfig(RCC_SYSCLK_Div1);
+    RCC_PCLK1Config(RCC_HCLK_Div4);
+    RCC_PCLK2Config(RCC_HCLK_Div2);
+
+    FLASH_DataCacheReset();
+    FLASH_InstructionCacheReset();
+    FLASH_DataCacheCmd(ENABLE);
+    FLASH_InstructionCacheCmd(ENABLE);
+    FLASH_PrefetchBufferCmd(ENABLE);
+    FLASH_SetLatency(FLASH_Latency_5);
+
+    RCC_PLLCmd(ENABLE);
+    while(RCC_GetFlagStatus(RCC_FLAG_PLLRDY) == 0) {}
+
+    while(RCC_GetSYSCLKSource() != 0x08) {}
+
+    RCC_ClocksTypeDef RCC_ClocksStatus;
+    RCC_GetClocksFreq(&RCC_ClocksStatus);
+    sysclk = RCC_ClocksStatus.SYSCLK_Frequency;
+    hclk = RCC_ClocksStatus.HCLK_Frequency;
+    pclk1 = RCC_ClocksStatus.PCLK1_Frequency;
+    pclk2 = RCC_ClocksStatus.PCLK2_Frequency;
+    SystemCoreClock = hclk;
+}
+
+
+int main(void) {
+#ifndef UNIT_TESTS_ONLY
+    initPll();
+    watchDogResetFlag = RCC_GetFlagStatus(RCC_FLAG_IWDGRST);
+    RCC_ClearFlag();
+    NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );  //  http://www.freertos.org/RTOS-Cortex-M3-M4.html
+    // Stm32F4 interrupt priorities in FreeRtos range from 0x80 to 0xF0.  Subpriority is 0 or 1.
+    CliTask::initCliUsart();
+
+    printf("\033[2J\033[H\033[0m");  // clear terminal screen
+    printf("Otto Version 0.1" NEWLINE);
+    printf("HSI_VALUE = %f MHz" NEWLINE, HSI_VALUE/1000000.0);
+    printf("SYSCLK clock rate = %f MHz" NEWLINE, sysclk/1000000.0);
+    printf("HCLK   clock rate = %f MHz" NEWLINE, hclk/1000000.0);
+    printf("PCLK1  clock rate = %f MHz" NEWLINE, pclk1/1000000.0);
+    printf("PCLK2  clock rate = %f MHz" NEWLINE, pclk2/1000000.0);
+    printf(NEWLINE "Starting POST" NEWLINE);
+#endif
+
+    bool unitPass = (watchDogResetFlag == SET) || runUnitTests();
+
+#ifdef UNIT_TESTS_ONLY
+    delay_ms(500);
+    debug_exit(unitPass? 0:1);
+#endif
+
+    Config::getInstance().loadLatest();
+    LEDs* leds = new LEDs();
+    leds->init();
+    leds->allOff();
+    Logger::getInstance().init();
+
+    bool peripheralPass = (watchDogResetFlag == SET) || runPeripheralTests();
+    bool postPass = unitPass & peripheralPass;
+
+    if (watchDogResetFlag == RESET) {
+        LOG_TEXT("Otto Version 0.1 - Log start")
+
+        if (postPass) {
+            printf(NEWLINE "POST Passed." NEWLINE);
+            LOG_TEXT("POST passed.")
+
+            leds->setGreenState(true);
+        } else {
+            printf(NEWLINE "There were test failures" NEWLINE "HALTED except for CLI" NEWLINE);
+
+            leds->setRedState(true);
+        }
+    }
+
+
+    if (postPass) {
+        xSemaphoreHandle altimeterSemaphore = xSemaphoreCreateBinary();
+        AltimeterTask* altimeterTask = new AltimeterTask(altimeterSemaphore);
+        altimeterTask->init();
+        altimeterTask->startTask("Atlimeter" /* task name */, 2 /* priority */, 2048 /* stack depth */);
+
+        GpsTask* gpsTask = new GpsTask();
+        gpsTask->init();
+        gpsTask->startTask("Gps" /* task name */, 2 /* priority */, 2048 /* stack depth */);
+
+        SensorTask* sensorTask = new SensorTask(altimeterTask, altimeterSemaphore, gpsTask);
+        sensorTask->init();
+        sensorTask->startTask("Sensor" /* task name */, 1 /* priority */, 2048 /* stack depth */);
+
+        ControlTask* controlTask = new ControlTask(sensorTask);
+        controlTask->init();
+        controlTask->startTask("Control" /* task name */, 1 /* priority */, 2048 /* stack depth */);
+
+        MonitorTask* monitorTask = new MonitorTask(leds, sensorTask, controlTask, altimeterTask, gpsTask);
+        monitorTask->init();
+        monitorTask->startTask("Monitor" /* task name */, 3 /* priority */, 2048 /* stack depth */);
+
+        CliTask* cliTask = new CliTask(sensorTask);
+        cliTask->init();
+        cliTask->startTask("CLI" /* task name */, 3 /* priority */, 2048 /* stack depth */);
+    }
+
+    vTaskStartScheduler(); // blocking call
+
+
+    debug_exit(0);
+    return 0;
+}
+

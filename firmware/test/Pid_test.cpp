@@ -1,0 +1,105 @@
+#include <embUnit/embUnit.h>
+#include <Pid.h>
+#include <math.h>
+
+#define ERROR_MARGIN 0.000001f
+
+static void setUp(void) {
+}
+
+static void tearDown(void) {
+}
+
+static void test_ctor(void) {
+    PidConfig pidConfig = PidConfig();
+    pidConfig.p = 1.0f;
+    pidConfig.i = 2.0f;
+    pidConfig.d = 3.0f;
+    Pid pid = Pid(&pidConfig);
+    TEST_ASSERT(fabsf(pid.p- pidConfig.p) < ERROR_MARGIN);
+    TEST_ASSERT(fabsf(pid.i- pidConfig.i) < ERROR_MARGIN);
+    TEST_ASSERT(fabsf(pid.d- pidConfig.d) < ERROR_MARGIN);
+}
+
+static void test_configCtor(void) {
+    Config& config = Config::getInstance();
+    Pid pid = Pid(&config.yawPid);
+    TEST_ASSERT(pid.p > 0.1f);
+}
+
+static void test_p() {
+    PidConfig pidConfig = PidConfig();
+    pidConfig.p = 0.5f;
+    pidConfig.i = 0;
+    pidConfig.d = 0;
+    Pid pid = Pid(&pidConfig);
+    float result = pid.calculate(42);
+    TEST_ASSERT(fabsf(result-21) < ERROR_MARGIN);
+}
+
+static void test_i() {
+    PidConfig pidConfig = PidConfig();
+    pidConfig.p = 0;
+    pidConfig.i = 0.5f;
+    pidConfig.d = 0;
+    Pid pid = Pid(&pidConfig);
+    float result = pid.calculate(42);
+    TEST_ASSERT(fabsf(result-21) < ERROR_MARGIN);
+    result = pid.calculate(42);
+    TEST_ASSERT(fabsf(result-21*2) < ERROR_MARGIN);
+}
+
+static void test_d() {
+    PidConfig pidConfig = PidConfig();
+    pidConfig.p = 0;
+    pidConfig.i = 0;
+    pidConfig.d = 0.5f;
+    Pid pid = Pid(&pidConfig);
+    float result = pid.calculate(42);
+    TEST_ASSERT(fabsf(result-21) < ERROR_MARGIN);
+    result = pid.calculate(42);
+    TEST_ASSERT(fabsf(result-0) < ERROR_MARGIN);
+}
+
+static void test_pid() {
+    PidConfig pidConfig = PidConfig();
+    pidConfig.p = 0.5f;
+    pidConfig.i = 0.1f;
+    pidConfig.d = 0.2f;
+    Pid pid = Pid(&pidConfig);
+    float result = pid.calculate(0);
+    TEST_ASSERT(fabsf(result) < ERROR_MARGIN);
+    result = pid.calculate(10);
+    TEST_ASSERT(fabsf(result-8) < ERROR_MARGIN);
+    result = pid.calculate(10);
+    TEST_ASSERT(fabsf(result-7) < ERROR_MARGIN);
+    result = pid.calculate(0);
+    TEST_ASSERT(fabsf(result-4) < ERROR_MARGIN);
+    result = pid.calculate(0);
+    TEST_ASSERT(fabsf(result-2) < ERROR_MARGIN);
+}
+
+static void test_pidConfigChange() {
+    Config config = Config::getInstance();
+    Pid pid = Pid(&config.yawPid);
+    TEST_ASSERT(pid.p < 100.0f);
+    config.yawPid.p = 200.0f;
+    pid.calculate(0.0f);
+    TEST_ASSERT(fabsf(config.yawPid.p - 200.0f) < 0.0001f);
+    config.yawPid.p = 0.5f;
+}
+
+TestRef Pid_tests(void) {
+    EMB_UNIT_TESTFIXTURES(fixtures) {
+        new_TestFixture("test_ctor", test_ctor),
+        new_TestFixture("test_configCtor", test_configCtor),
+        new_TestFixture("test_p", test_p),
+        new_TestFixture("test_i", test_i),
+        new_TestFixture("test_d", test_d),
+        new_TestFixture("test_pid", test_pid),
+        new_TestFixture("test_pidConfigChange", test_pidConfigChange)
+    };
+
+    EMB_UNIT_TESTCALLER(Pid_tests, "Pid_tests", setUp, tearDown, fixtures);
+    return (TestRef)&Pid_tests;
+}

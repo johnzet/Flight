@@ -1,0 +1,136 @@
+#include <AltimeterTask.h>
+
+AltimeterTask::AltimeterTask(xSemaphoreHandle semaphore) {
+    this->semaphore = semaphore;
+    
+    altAddress = 0b11101110;
+    altI2C = new I2C(I2C3, altAddress);
+
+    queue = xQueueCreate(1, sizeof(float));
+}
+
+
+void AltimeterTask::init() {
+    initIO();
+    readCalData();
+}
+
+void AltimeterTask::initIO() {
+    GPIO_InitTypeDef GPIO_InitStruct;
+    I2C_InitTypeDef I2C_InitStruct;
+
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_I2C3, ENABLE);
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOH, ENABLE);
+
+    GPIO_InitStruct.GPIO_Pin = GPIO_Pin_7 | GPIO_Pin_8;
+    GPIO_InitStruct.GPIO_Mode = GPIO_Mode_AF;
+    GPIO_InitStruct.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStruct.GPIO_OType = GPIO_OType_OD;
+    GPIO_InitStruct.GPIO_PuPd = GPIO_PuPd_NOPULL;
+    GPIO_Init(GPIOH, &GPIO_InitStruct);
+
+    GPIO_PinAFConfig(GPIOH, GPIO_PinSource7, GPIO_AF_I2C3);
+    GPIO_PinAFConfig(GPIOH, GPIO_PinSource8, GPIO_AF_I2C3);
+
+    I2C_InitStruct.I2C_ClockSpeed = 400000;
+    I2C_InitStruct.I2C_Mode = I2C_Mode_I2C;
+    I2C_InitStruct.I2C_DutyCycle = I2C_DutyCycle_2;
+    I2C_InitStruct.I2C_OwnAddress1 = 0x00;
+    I2C_InitStruct.I2C_Ack = I2C_Ack_Disable;
+    I2C_InitStruct.I2C_AcknowledgedAddress = I2C_AcknowledgedAddress_7bit;
+    I2C_Init(I2C3, &I2C_InitStruct);
+
+    I2C_Cmd(I2C3, ENABLE);
+}
+
+void AltimeterTask::readCalData() {
+    ac1 = (altI2C->read(0xAA) << 8) | altI2C->read(0xAB);
+    ac2 = (altI2C->read(0xAC) << 8) | altI2C->read(0xAD);
+    ac3 = (altI2C->read(0xAE) << 8) | altI2C->read(0xAF);
+    ac4 = (altI2C->read(0xB0) << 8) | altI2C->read(0xB1);
+    ac5 = (altI2C->read(0xB2) << 8) | altI2C->read(0xB3);
+    ac6 = (altI2C->read(0xB4) << 8) | altI2C->read(0xB5);
+    b1 = (altI2C->read(0xB6) << 8) | altI2C->read(0xB7);
+    b2 = (altI2C->read(0xB8) << 8) | altI2C->read(0xB9);
+    mb = (altI2C->read(0xBA) << 8) | altI2C->read(0xBB);
+    mc = (altI2C->read(0xBC) << 8) | altI2C->read(0xBD);
+    md = (altI2C->read(0xBE) << 8) | altI2C->read(0xBF);
+}
+
+void AltimeterTask::task() {
+    while (true) {
+        if (xSemaphoreTake(semaphore, 0) == pdTRUE) {
+            float altitude = measureAltitude();
+           
+            if (altitude > 1.0f) { 
+                // occasionally a bad sample results in 0 altitude
+                xQueueOverwrite(queue, &altitude);
+            }
+        }
+        this->isAlive = true;
+//        taskYIELD();
+        vTaskDelay(20/portTICK_PERIOD_MS);
+    }
+}
+
+float AltimeterTask::measureAltitude() {
+    try {
+        altI2C->write(0xF4, 0x2E);
+        vTaskDelay(6/portTICK_PERIOD_MS);  // conversion time delay
+        long ut = (altI2C->read(0xF6) << 8) + altI2C->read(0xF7);    // uncompensated temperature
+        uint8_t oss = 3;   // refers to the oversampling setting (0-3 = low-High)
+        altI2C->write(0xF4, 0x34 + (oss<<6));
+        vTaskDelay(28/portTICK_PERIOD_MS);  // conversion time delay
+        int32_t up = ((altI2C->read(0xF6) << 16) + (altI2C->read(0xF7) << 8) + ((altI2C->read(0xF8)))) >> (8-oss);  // uncompensated pressure
+
+        // calculate true temperature
+        int32_t x1 = (ut-ac6) * ac5/(1<<15);
+        int32_t x2 = mc * (1<<11) / (x1 + md);
+        int32_t b5 = x1 + x2;
+        //float t = ((b5 + 8.0f) / (1<<4))/10.0f;  //  temperature in C
+
+        // calculate true pressure
+        uint32_t b4;
+        uint32_t b7;
+        int32_t p;
+        int32_t b6 = b5 - 4000;
+        x1 = (b2 * ((b6 * b6) >> 12)) >> 11;
+        x2 = (ac2 * b6) >> 11;
+        int32_t x3 = x1 + x2;
+        int32_t b3 = ((((int32_t)ac1 * 4 + x3) << oss) + 2) >> 2;
+        x1 = (ac3 * b6) >> 13;
+        x2 = (b1 * ((b6 * b6) >> 12)) >> 16;
+        x3 = (x1 + x2 + 2) >> 2;
+        b4 = (ac4 * (uint32_t)(x3 + 32768)) >> 15;
+        b7 = ((uint32_t)(up - b3) * (50000 >> oss));
+        if (b7 < 0x80000000) { 
+            p = (b7 << 1) / b4; 
+        } else { 
+            p = (b7/b4) << 1; 
+        }
+        x1 = (p >> 8) * (p >> 8);
+        x1 = (x1 * 3038) >> 16;
+        x2 = (-7357 * p) >> 16;
+        p = p + ((x1 + x2 + 3791) >> 4);  // pressure in Pa
+
+        // calculate altitude 
+//       return 44330.0f * (1.0f - powf((p / (100.0f * 1013.25f)), (1.0f/5.255f)));
+//        return (powf(1013.25f / (p/100.0f), 1.0f/5.255f) - 1.0f)*(t -10.0f + 273.15f) / 0.0065f;  // -10C compensates for pcb (regulator) heat
+        return (powf(1013.25f / (p/100.0f), 1.0f/5.255f) - 1.0f)*(20.0f -10.0f + 273.15f) / 0.0065f;  // Constant temperature
+
+    }
+    catch (I2cTimeoutException& te) {
+        taskENABLE_INTERRUPTS();
+        LOG_TEXT("I2C timeout exception occured in Altimeter::measureAltitude()");
+    }
+    catch (std::exception& e) {
+        taskENABLE_INTERRUPTS();
+        LOG_TEXT("unknown exception occured in Altimeter::measureAltitude()");
+    }
+    return 0;
+}
+
+portBASE_TYPE AltimeterTask::getAltimeterSample(float* sampleData) {
+    return xQueueReceive(queue, sampleData, 0);
+}
+

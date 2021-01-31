@@ -1,0 +1,227 @@
+#include <CliTask.h>
+#define DELIMITERS " "
+
+extern "C" {
+    CliTask* irqCliObject;
+}
+
+CliTask::CliTask(SensorTask* sensorTask) {
+    this->sensorTask = sensorTask;
+    testMode = true;
+    commandIsReady = false;
+    cliCharBuffer[0] = NULL;
+    previousCommand[0] = NULL;
+}
+
+void CliTask::init() {
+    irqCliObject = this;
+    testMode = false;
+    processCommand(NULL);;  // print a prompt
+}
+
+void CliTask::task() {
+    while(true) {
+        if (commandIsReady) {
+            commandIsReady= false;
+            processCommand(commandBuffer);
+            commandBuffer[0] = NULL;
+        }
+        vTaskDelay(500/portTICK_PERIOD_MS);
+    }
+}
+
+void CliTask::initCliUsart() {
+        GPIO_InitTypeDef GPIO_InitStructure;
+        USART_InitTypeDef USART_InitStructure;
+
+        /* enable peripheral clock for USART1 */
+        RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
+
+        /* GPIOA clock enable */
+        RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
+
+        /* Connect USART1 pins to AF7 */
+        // TX = PA9, RX = PA10
+        GPIO_PinAFConfig(GPIOA, GPIO_PinSource9, GPIO_AF_USART1);
+        GPIO_PinAFConfig(GPIOA, GPIO_PinSource10, GPIO_AF_USART1);
+
+        //  RX & TX
+        GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9 | GPIO_Pin_10;
+        GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+        GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+        GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+        GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+        GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+        // CTS (input)
+        GPIO_InitStructure.GPIO_Pin = GPIO_Pin_11;
+        GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+        GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+        GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+        GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+        GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+        // RTS (output)
+        GPIO_InitStructure.GPIO_Pin = GPIO_Pin_12;
+        GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+        GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+        GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+        GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+        GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+        USART_InitStructure.USART_BaudRate = 230400;
+        USART_InitStructure.USART_WordLength = USART_WordLength_8b;
+        USART_InitStructure.USART_StopBits = USART_StopBits_1;
+        USART_InitStructure.USART_Parity = USART_Parity_No;
+        USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_RTS_CTS;
+        USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+        USART_Init(USART1, &USART_InitStructure);
+    
+        USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
+
+        NVIC_InitTypeDef NVIC_InitStructure;
+        NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
+        NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = configLOWEST_PRIORITY_INTERRUPT;
+        NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+        NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+        NVIC_Init(&NVIC_InitStructure);        
+
+        USART_Cmd(USART1, ENABLE); // enable USART1
+}
+
+void CliTask::processCommand(char* buffer) {
+    if (!testMode) printf(NEWLINE "\033[37m");
+
+    if (buffer == NULL || buffer[0] == NULL) {
+        Config::getInstance().setConsoleEnabled(false);
+        if (!testMode) printf(CLI_PROMPT);
+        return;
+    }
+
+    char* strtokState;
+    char* command = strtok_r(buffer, DELIMITERS, &strtokState);
+    if (strcmp("load", command) == 0) {
+        if (!Config::getInstance().loadConfigFromFlash()) {
+            if (!testMode) printf("Load failed.  The chip may have been erased." NEWLINE);
+        }
+    } else if (strcmp("save", command) == 0) {
+       Config::getInstance().saveConfigToFlash();
+    } else if (strcmp("default", command) == 0) {
+        Config::getInstance().loadDefaults();
+    } else if (strcmp("list", command) == 0) {
+       Config::getInstance().printConfig();
+    } else if (strcmp("get", command) == 0 || strcmp("set", command) == 0) {
+        char* axisStr = strtok_r(NULL, DELIMITERS, &strtokState);
+        if (axisStr == NULL || (strcmp("yaw",axisStr)<0 && strcmp("pitch",axisStr)<0 && strcmp("roll",axisStr)<0 && strcmp("tail",axisStr)<0 && strcmp("feedback",axisStr)<0)) {
+            dumpUsageStmt();
+        } else {
+            char* propertyStr = strtok_r(NULL, DELIMITERS, &strtokState);
+            if (propertyStr == NULL || (strcmp("pidp",propertyStr)<0 && strcmp("pidi",propertyStr)<0 && strcmp("pidd",propertyStr)<0 && strcmp("max",propertyStr)<0 
+                    && strcmp("min",propertyStr)<0 && strcmp("reverse",propertyStr)<0 && strcmp("altimeter",propertyStr)<0 && strcmp("compass",propertyStr)<0 
+                    && strcmp("gps2pos",propertyStr)<0 && strcmp("gps2vel",propertyStr)<0 && strcmp("accel2frame",propertyStr)<0 && strcmp("accel2gyro",propertyStr)<0)) {
+                dumpUsageStmt();
+            } else {
+                char* valueStr = strtok_r(NULL, DELIMITERS, &strtokState);
+                if (valueStr == NULL && strcmp("set", command) == 0) {
+                    dumpUsageStmt();
+                } else {
+                    if (!Config::getInstance().processGetSet(command, axisStr, propertyStr, valueStr))
+                        dumpUsageStmt();
+                }
+            }
+        }
+    } else if (strcmp("dump", command) == 0) {
+
+        char* typeStr = strtok_r(NULL, DELIMITERS, &strtokState);
+        if (typeStr == NULL) {
+            dumpUsageStmt();
+        } else {
+            Logger::getInstance().dumpLog(typeStr);
+        }
+    } else if (strcmp("console", command) == 0) {
+        Config::getInstance().setConsoleEnabled(true);
+    } else if (strcmp("cal", command) == 0) {
+        sensorTask->calibrateSensors();
+    } else if (strcmp("origin", command) == 0) {
+        sensorTask->markOrigin();
+    } else if (strcmp("clear", command) == 0) {
+        Logger::getInstance().clear();
+    } else if (strcmp("help", command) == 0) {
+        if (!testMode)  {
+            dumpUsageStmt();
+        }
+    } else {
+        if (!testMode)  {
+            dumpUsageStmt();
+        }
+    }
+    if (!testMode) printf(CLI_PROMPT);
+}
+
+
+// this is the interrupt request handler (IRQ) for ALL USART1 interrupts
+extern "C" void USART1_IRQHandler(void){
+    if (irqCliObject != NULL) {
+        irqCliObject->irqHandler();
+    }
+}
+
+void CliTask::irqHandler() {
+    if( USART_GetITStatus(USART1, USART_IT_RXNE) || USART_GetITStatus(USART3, USART_IT_ORE)) {
+
+        static uint8_t cnt = 0;
+        static bool escapeSeuence = false;
+        char t = USART1->DR;
+
+        if (cnt >= CLI_BUFFER_LENGTH) {
+            printf(NEWLINE "**** Input was too long.  Try again.  ****" NEWLINE CLI_PROMPT);
+            cnt = 0;
+           cliCharBuffer[0] = NULL;
+        } else if (t == 0x1b || t == 0x5b) {
+            escapeSeuence = true;
+        } else if (escapeSeuence && t == 0x41) {
+            // up arrow
+            strcpy(cliCharBuffer, previousCommand);
+            cnt = strlen(cliCharBuffer);
+            printf(cliCharBuffer);
+        } else if (t == 0x08 /* backspace */) {
+            if (cnt > 0) {
+                cnt--;
+                cliCharBuffer[cnt] = NULL;
+                printf("\b \b");
+            }
+        } else if (t == '\r') {
+            escapeSeuence = false;
+            cliCharBuffer[cnt] = NULL;
+            int len = strlen(cliCharBuffer);
+            if (len != 0) {
+                strcpy(previousCommand, cliCharBuffer);
+            }
+            strcpy(commandBuffer, cliCharBuffer);
+            commandIsReady = true;
+            cnt = 0;
+           cliCharBuffer[0] = NULL;
+        } else if (t != '\r' && t != '\n') {
+            escapeSeuence = false;
+            printf("%c", t);
+            cliCharBuffer[cnt] = t;
+            cnt++;
+        }
+    }
+}
+
+void CliTask::dumpUsageStmt() {
+    printf("Usage:" NEWLINE);
+    printf("    default, list, load, save (configuration info)" NEWLINE);
+    printf("    cal (calibrate sensors)" NEWLINE);
+    printf("    origin (mark the origin)" NEWLINE);
+    printf("    clear (clear log)" NEWLINE);
+    printf("    dump <text || imu || kin>" NEWLINE);
+    printf("    get <yaw|pitch|roll> <pidp|pidi|pidd>" NEWLINE);
+    printf("    set <yaw|pitch|roll> <pidp|pidi|pidd> <value>" NEWLINE);
+    printf("    get <tail> <max|min|reverse>" NEWLINE);
+    printf("    set <tail> <max|min|reverse> <value>" NEWLINE);
+    printf("    get feedback <altimeter|compass|gps2pos|gps2vel|accel2frame|accel2gyro>" NEWLINE);
+    printf("    set feedback <altimeter|compass|gps2pos|gps2vel|accel2frame|accel2gyro> <value>" NEWLINE);
+}
+

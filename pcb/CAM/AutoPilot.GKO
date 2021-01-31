@@ -1,0 +1,19 @@
+G04 DipTrace 2.3.1.0*
+%INAutoPilot.GKO*%
+%MOIN*%
+%ADD10C,0.0059*%
+%FSLAX44Y44*%
+G04*
+G70*
+G90*
+G75*
+G01*
+%LNBoardOutline*%
+%LPD*%
+X0Y25600D2*
+D10*
+X25600D1*
+Y0D1*
+X0D1*
+Y25600D1*
+M02*

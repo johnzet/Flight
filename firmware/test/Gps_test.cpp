@@ -1,0 +1,79 @@
+#include <embUnit/embUnit.h>
+#include <GpsTask.h>
+
+#define ERROR_MARGIN 0.00001f
+
+static void setUp(void) {
+}
+
+static void tearDown(void) {
+}
+
+static void test_GpsSample() {
+    Vector position = Vector(2,3, 0);
+    Vector velocity = Vector(4,5,0);
+    TickType_t timestamp = 1234;
+    GpsSample s = GpsSample(&position, &velocity, timestamp);
+    Vector* p = s.getNewPosition();
+    Vector* v = s.getNewVelocity();
+    TEST_ASSERT(fabsf(p->x - position.x) < ERROR_MARGIN);
+    TEST_ASSERT(fabsf(p->y - position.y) < ERROR_MARGIN);
+    TEST_ASSERT(fabsf(p->z) < ERROR_MARGIN);
+    TEST_ASSERT(fabsf(v->x - velocity.x) < ERROR_MARGIN);
+    TEST_ASSERT(fabsf(v->y - velocity.y) < ERROR_MARGIN);
+    TEST_ASSERT(fabsf(v->z) < ERROR_MARGIN);
+    TEST_ASSERT(fabsf(s.getTimestamp() - timestamp) < ERROR_MARGIN);
+    delete v;
+    delete p;
+}
+
+static void test_parseGarbage() {
+    GpsTask gps = GpsTask();
+    gps.parsePacket("w4t4,55tg45tg45,g54geg,54gy,,y6r3245,3,5,35232q,2,");
+    TEST_ASSERT(!gps.isLocked());
+}
+
+static void test_parseUnlocked() {
+    GpsTask gps = GpsTask();
+    gps.parsePacket("$GPRMC,231645.010,V,3945.0545,N,10457.7586,W,0.32,357.56,010115,,,N*79\r\n");
+    TEST_ASSERT(!gps.isLocked());
+}
+
+static void test_parseGood() {
+    GpsTask gps = GpsTask();
+    gps.parsePacket("$GPRMC,231645.010,A,3945.0545,N,10457.7586,W,0.32,357.56,010115,,,A*79\r\n");
+    TEST_ASSERT(gps.isLocked());
+}
+
+static void test_calculateSampleData() {
+    const float r = 637100.0f; // Earth's radius in meters
+    GpsTask gps = GpsTask();
+    gps.parsePacket("$GPRMC,231645.010,A,3945.0545,N,10457.7586,W,0.32,357.56,010115,,,A*79\r\n");
+    gps.markOrigin();
+    gps.parsePacket("$GPRMC,231645.010,A,4145.2545,N,10557.8586,W,0.32,357.56,010115,,,A*79\r\n");
+    GpsSample* s = gps.getNewSample();
+    Vector* p = s->getNewPosition();
+    Vector* v = s->getNewVelocity();
+    TEST_ASSERT(fabsf(p->x - r*sinf(2.003333f * PI/180.0f)) < 1);
+    TEST_ASSERT(fabsf(p->y - r*sinf(1.001666f * PI/180.0f)) < 1);
+    float courseCcwN = (360.0f-357.56f)*PI/180.0f;
+    float speedMps = 0.32f * 0.51444444444f;
+    TEST_ASSERT(fabsf(v->x - speedMps*cosf(courseCcwN)) < ERROR_MARGIN);
+    TEST_ASSERT(fabsf(v->y - speedMps*sinf(courseCcwN)) < ERROR_MARGIN);
+    delete v;
+    delete p;
+    delete s;
+}
+
+TestRef GpsTask_tests(void) {
+    EMB_UNIT_TESTFIXTURES(fixtures) {
+        new_TestFixture("test_GpsSample", test_GpsSample),
+        new_TestFixture("test_parseGarbage", test_parseGarbage),
+        new_TestFixture("test_parseUnlocked", test_parseUnlocked),
+        new_TestFixture("test_parseGood", test_parseGood),
+        new_TestFixture("test_calculateSampleData", test_calculateSampleData)
+    };
+
+    EMB_UNIT_TESTCALLER(GpsTask_tests, "GpsTask_tests", setUp, tearDown, fixtures);
+    return (TestRef)&GpsTask_tests;
+}
